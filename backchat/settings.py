@@ -36,6 +36,35 @@ def env_list(name, default=None):
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
+def normalize_origin(origin):
+    origin = origin.strip()
+    if len(origin) >= 2 and origin[0] == origin[-1] and origin[0] in {"'", '"'}:
+        origin = origin[1:-1].strip()
+
+    parsed = urlparse(origin)
+    if (
+        parsed.scheme
+        and parsed.netloc
+        and parsed.path == '/'
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+    ):
+        return f'{parsed.scheme}://{parsed.netloc}'
+
+    return origin
+
+
+def env_origin_list(name, default=None):
+    values = env_list(name, default)
+    origins = []
+    for value in values:
+        normalized = normalize_origin(value)
+        if normalized:
+            origins.append(normalized)
+    return origins
+
+
 def env_str(name, default=''):
     value = os.getenv(name)
     if value is None:
@@ -214,10 +243,10 @@ _default_frontend_origins = [
     'https://chatsegur.netlify.app',
 ]
 CORS_ALLOW_ALL_ORIGINS = env_bool('CORS_ALLOW_ALL_ORIGINS', False)
-CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', _default_frontend_origins)
+CORS_ALLOWED_ORIGINS = env_origin_list('CORS_ALLOWED_ORIGINS', _default_frontend_origins)
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', True)
 
-CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
+CSRF_TRUSTED_ORIGINS = env_origin_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
 
 
 # Database
