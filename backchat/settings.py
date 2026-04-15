@@ -35,14 +35,31 @@ def env_list(name, default=None):
         return list(default or [])
     return [item.strip() for item in value.split(',') if item.strip()]
 
+
+def env_str(name, default=''):
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1].strip()
+
+    if not value or value.lower() in {'none', 'null'}:
+        return default
+
+    # Ignore unresolved placeholders like ${DATABASE_URL} from deploy settings.
+    if value.startswith('${') and value.endswith('}'):
+        return default
+
+    return value
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def database_config():
-    database_url = (os.getenv('DATABASE_URL') or '').strip()
-    if len(database_url) >= 2 and database_url[0] == database_url[-1] and database_url[0] in {"'", '"'}:
-        database_url = database_url[1:-1].strip()
+    database_url = env_str('DATABASE_URL', '')
     if database_url:
         parsed = urlparse(database_url)
         engine_map = {
@@ -54,34 +71,36 @@ def database_config():
         }
         engine = engine_map.get(parsed.scheme.lower())
         if engine is None:
-            raise ValueError(f'Unsupported DATABASE_URL scheme: {parsed.scheme}')
-
-        if engine == 'django.db.backends.sqlite3':
+            if not parsed.scheme:
+                database_url = ''
+            else:
+                raise ValueError(f'Unsupported DATABASE_URL scheme: {parsed.scheme}')
+        elif engine == 'django.db.backends.sqlite3':
             sqlite_name = unquote(parsed.path.lstrip('/')) or 'db.sqlite3'
             sqlite_path = Path(sqlite_name)
             return {
                 'ENGINE': engine,
                 'NAME': sqlite_path if sqlite_path.is_absolute() else BASE_DIR / sqlite_path,
             }
+        else:
+            options = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            config = {
+                'ENGINE': engine,
+                'NAME': unquote(parsed.path.lstrip('/')),
+                'USER': unquote(parsed.username or ''),
+                'PASSWORD': unquote(parsed.password or ''),
+                'HOST': parsed.hostname or 'localhost',
+                'PORT': str(parsed.port or '5432'),
+                'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
+                'CONN_HEALTH_CHECKS': True,
+            }
+            if options:
+                config['OPTIONS'] = options
 
-        options = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        config = {
-            'ENGINE': engine,
-            'NAME': unquote(parsed.path.lstrip('/')),
-            'USER': unquote(parsed.username or ''),
-            'PASSWORD': unquote(parsed.password or ''),
-            'HOST': parsed.hostname or 'localhost',
-            'PORT': str(parsed.port or '5432'),
-            'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
-            'CONN_HEALTH_CHECKS': True,
-        }
-        if options:
-            config['OPTIONS'] = options
-
-        sslmode = os.getenv('POSTGRES_SSLMODE')
-        if sslmode:
-            config.setdefault('OPTIONS', {})['sslmode'] = sslmode
-        return config
+            sslmode = os.getenv('POSTGRES_SSLMODE')
+            if sslmode:
+                config.setdefault('OPTIONS', {})['sslmode'] = sslmode
+            return config
 
     if os.getenv('POSTGRES_DB'):
         config = {
