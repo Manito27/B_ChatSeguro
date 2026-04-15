@@ -40,7 +40,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def database_config():
-    database_url = os.getenv('DATABASE_URL')
+    database_url = (os.getenv('DATABASE_URL') or '').strip()
+    if len(database_url) >= 2 and database_url[0] == database_url[-1] and database_url[0] in {"'", '"'}:
+        database_url = database_url[1:-1].strip()
     if database_url:
         parsed = urlparse(database_url)
         engine_map = {
@@ -190,6 +192,7 @@ REST_FRAMEWORK = {
 _default_frontend_origins = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'https://chatsegur.netlify.app',
 ]
 CORS_ALLOW_ALL_ORIGINS = env_bool('CORS_ALLOW_ALL_ORIGINS', False)
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', _default_frontend_origins)
