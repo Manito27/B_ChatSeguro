@@ -29,6 +29,13 @@ def env_int(name, default):
     return int(value)
 
 
+def env_optional_int(name):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return int(value)
+
+
 def env_list(name, default=None):
     value = os.getenv(name)
     if value is None:
@@ -87,6 +94,39 @@ def env_str(name, default=''):
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def build_postgres_options(extra_options=None):
+    options = dict(extra_options or {})
+
+    int_option_names = {'connect_timeout'}
+    for option_name in int_option_names:
+        value = options.get(option_name)
+        if value is not None and str(value).strip():
+            options[option_name] = int(value)
+
+    env_option_map = {
+        'POSTGRES_SSLMODE': 'sslmode',
+        'POSTGRES_SSLROOTCERT': 'sslrootcert',
+        'POSTGRES_SSLCERT': 'sslcert',
+        'POSTGRES_SSLKEY': 'sslkey',
+        'POSTGRES_APPLICATION_NAME': 'application_name',
+        'POSTGRES_TARGET_SESSION_ATTRS': 'target_session_attrs',
+    }
+    for env_name, option_name in env_option_map.items():
+        value = env_str(env_name, '')
+        if value:
+            options[option_name] = value
+
+    env_int_option_map = {
+        'POSTGRES_CONNECT_TIMEOUT': 'connect_timeout',
+    }
+    for env_name, option_name in env_int_option_map.items():
+        value = env_optional_int(env_name)
+        if value is not None:
+            options[option_name] = value
+
+    return options
+
+
 def database_config():
     database_url = env_str('DATABASE_URL', '')
     if database_url:
@@ -113,6 +153,9 @@ def database_config():
             }
         else:
             options = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            if engine == 'django.db.backends.postgresql':
+                options = build_postgres_options(options)
+
             config = {
                 'ENGINE': engine,
                 'NAME': unquote(parsed.path.lstrip('/')),
@@ -125,26 +168,23 @@ def database_config():
             }
             if options:
                 config['OPTIONS'] = options
-
-            sslmode = os.getenv('POSTGRES_SSLMODE')
-            if sslmode:
-                config.setdefault('OPTIONS', {})['sslmode'] = sslmode
             return config
 
-    if os.getenv('POSTGRES_DB'):
+    postgres_db_name = env_str('POSTGRES_DB', env_str('POSTGRES_DATABASE', ''))
+    if postgres_db_name:
         config = {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('POSTGRES_DB', ''),
-            'USER': os.getenv('POSTGRES_USER', ''),
-            'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
-            'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
-            'PORT': os.getenv('POSTGRES_PORT', '5432'),
+            'NAME': postgres_db_name,
+            'USER': env_str('POSTGRES_USER', ''),
+            'PASSWORD': env_str('POSTGRES_PASSWORD', ''),
+            'HOST': env_str('POSTGRES_HOST', 'localhost'),
+            'PORT': env_str('POSTGRES_PORT', '5432'),
             'CONN_MAX_AGE': env_int('DB_CONN_MAX_AGE', 60),
             'CONN_HEALTH_CHECKS': True,
         }
-        sslmode = os.getenv('POSTGRES_SSLMODE')
-        if sslmode:
-            config['OPTIONS'] = {'sslmode': sslmode}
+        options = build_postgres_options()
+        if options:
+            config['OPTIONS'] = options
         return config
 
     return {
