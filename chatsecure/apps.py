@@ -7,10 +7,10 @@ class ChatsecureConfig(AppConfig):
     def ready(self):
         from django.db.models.signals import post_migrate
 
-        from .signals import ensure_superuser
+        from .signals import ensure_bootstrap_users
 
         post_migrate.connect(
-            ensure_superuser,
+            ensure_bootstrap_users,
             sender=self,
-            dispatch_uid='chatsecure.ensure_superuser',
+            dispatch_uid='chatsecure.ensure_bootstrap_users',
         )

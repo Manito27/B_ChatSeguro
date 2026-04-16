@@ -1,5 +1,5 @@
-from .bootstrap import sync_superuser_from_env
+from .bootstrap import sync_users_from_env
 
 
-def ensure_superuser(sender, **kwargs):
-    sync_superuser_from_env()
+def ensure_bootstrap_users(sender, **kwargs):
+    sync_users_from_env()
